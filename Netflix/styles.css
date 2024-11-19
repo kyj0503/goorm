@@ -47,12 +47,10 @@ body {
 .movie-grid {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
-    gap: 15px;
-    padding: 0 20px;
+    gap: 20px;
 }
 
 .movie {
-    overflow: hidden;
     transition: transform 0.3s ease-in-out;
 }
 
