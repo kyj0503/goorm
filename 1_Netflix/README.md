@@ -2,4 +2,4 @@
 
 # 결과물
 
-![result image](https://github.com/kyj0503/goorm/blob/main/Netflix/img/result.png)
+![result image](https://github.com/kyj0503/goorm/blob/main/1_Netflix/img/result.png)
