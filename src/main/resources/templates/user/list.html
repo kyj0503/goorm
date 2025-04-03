@@ -1,0 +1,41 @@
+<!-- src/main/resources/templates/user/list.html -->
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>User List</title>
+    <meta charset="utf-8"/>
+</head>
+<body>
+<h1>User List</h1>
+
+<!-- 사용자 테이블 -->
+<table border="1">
+    <thead>
+    <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Actions</th>
+    </tr>
+    </thead>
+    <tbody>
+    <!-- 반복문으로 users 목록 출력 -->
+    <tr th:each="user : ${users}">
+        <td th:text="${user.id}"></td>
+        <td th:text="${user.name}"></td>
+        <td th:text="${user.email}"></td>
+        <td>
+            <a th:href="@{/users/{id}/edit(id=${user.id})}">Edit</a>
+            |
+            <a th:href="@{/users/{id}/delete(id=${user.id})}"
+               onclick="return confirm('정말 삭제하시겠습니까?');">Delete</a>
+        </td>
+    </tr>
+    </tbody>
+</table>
+
+<!-- 신규 회원 생성 링크 -->
+<p><a href="/users/new">Create New User</a></p>
+
+</body>
+</html>
