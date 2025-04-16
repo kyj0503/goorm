@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Simple Chat</title>
+    <style>
+      .error-guide {
+        display: none;
+        padding: 20px;
+        background-color: #f8d7da;
+        border: 1px solid #f5c6cb;
+        border-radius: 4px;
+        color: #721c24;
+        margin: 20px;
+      }
+      
+      .error-steps {
+        margin-top: 10px;
+        padding-left: 20px;
+      }
+      
+      .error-steps li {
+        margin-bottom: 8px;
+      }
+      
+      .show-guide {
+        display: block;
+      }
+      
+      .error-header {
+        font-weight: bold;
+        font-size: 18px;
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    
+    <!-- 연결 문제 발생 시 보여지는 가이드 -->
+    <div id="connection-error-guide" class="error-guide">
+      <div class="error-header">연결 문제가 발생했습니다</div>
+      <p>다음 단계를 시도해보세요:</p>
+      <ol class="error-steps">
+        <li>페이지를 새로고침해 보세요. (F5 또는 브라우저 새로고침 버튼)</li>
+        <li>백엔드 서버가 실행 중인지 확인하세요.</li>
+        <li>환경 변수가 올바르게 설정되었는지 확인하세요. (.env 파일)</li>
+        <li>네트워크 연결 상태를 확인하세요.</li>
+        <li>브라우저 콘솔에서 오류 메시지를 확인하세요. (F12)</li>
+      </ol>
+    </div>
+    
+    <script>
+      // 전역 에러 핸들러
+      window.addEventListener('error', function(event) {
+        console.error('글로벌 에러 발생:', event.error);
+        
+        // 리소스 관련 오류 감지
+        if (event.message && (
+            event.message.includes('ERR_INSUFFICIENT_RESOURCES') ||
+            event.message.includes('STOMP') ||
+            event.message.includes('WebSocket')
+        )) {
+          document.getElementById('connection-error-guide').classList.add('show-guide');
+        }
+      });
+      
+      // 네트워크 상태 변화 감지
+      window.addEventListener('online', function() {
+        console.log('온라인 상태가 되었습니다. 앱을 다시 로드합니다.');
+        setTimeout(() => window.location.reload(), 1000);
+      });
+      
+      window.addEventListener('offline', function() {
+        console.log('오프라인 상태가 되었습니다. 연결 가이드를 표시합니다.');
+        document.getElementById('connection-error-guide').classList.add('show-guide');
+      });
+    </script>
+    
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html> 

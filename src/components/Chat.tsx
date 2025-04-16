@@ -29,6 +29,12 @@ interface UserInfo {
   email: string;
 }
 
+// 백오프 관련 상수
+const INITIAL_RECONNECT_DELAY = 1000; // 초기 재연결 지연 시간 (1초)
+const MAX_RECONNECT_DELAY = 30000; // 최대 재연결 지연 시간 (30초)
+const RECONNECT_BACKOFF_FACTOR = 1.5; // 재연결 지연 시간 증가 팩터
+const MAX_RECONNECT_ATTEMPTS = 5; // 최대 재연결 시도 횟수
+
 // JWT 토큰에서 페이로드 추출
 const getTokenPayload = (token: string) => {
   try {
@@ -52,18 +58,21 @@ const Chat = () => {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [hasServerError, setHasServerError] = useState(false);
+  
   const clientRef = useRef<Client | null>(null);
   const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 3;
+  const reconnectTimeoutRef = useRef<number | null>(null);
   const receivedMsgIds = useRef<Set<string>>(new Set()); // 중복 메시지 처리를 위한 ID 저장소
 
-  // 토큰 유효성 검사 - 권한 검사 제외
+  // 토큰 유효성 검사 - 만료 시간 및 형식 확인
   const isTokenValid = (token: string) => {
     try {
       const payload = getTokenPayload(token);
       if (!payload) return false;
       
-      // 만료 시간만 확인
+      // 만료 시간 확인
       return payload.exp * 1000 > Date.now();
     } catch (e) {
       console.error('토큰 형식이 잘못되었습니다:', e);
@@ -71,21 +80,102 @@ const Chat = () => {
     }
   };
 
-  // WebSocket 연결 함수를 useCallback으로 분리
-  const connectWebSocket = useCallback((token: string, username: string) => {
-    if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+  // 서버 상태 확인 함수
+  const checkServerStatus = useCallback(async () => {
+    try {
+      setServerStatus('checking');
+      const response = await fetch(`${API_URL}/actuator/health`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      if (response.ok) {
+        setServerStatus('online');
+        setHasServerError(false);
+        return true;
+      } else {
+        setServerStatus('offline');
+        setHasServerError(true);
+        return false;
+      }
+    } catch (error) {
+      console.error('서버 상태 확인 중 오류:', error);
+      setServerStatus('offline');
+      setHasServerError(true);
+      return false;
+    }
+  }, [API_URL]);
+
+  // 토큰 갱신 함수
+  const refreshToken = useCallback(async () => {
+    try {
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (!refreshToken) {
+        throw new Error('리프레시 토큰이 없습니다.');
+      }
+
+      const response = await fetch(`${API_URL}/api/users/refresh`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!response.ok) {
+        throw new Error('토큰 갱신에 실패했습니다.');
+      }
+
+      const data = await response.json();
+      if (data.accessToken) {
+        localStorage.setItem('accessToken', data.accessToken);
+        if (data.refreshToken) {
+          localStorage.setItem('refreshToken', data.refreshToken);
+        }
+        console.log('토큰이 성공적으로 갱신되었습니다.');
+        return data.accessToken;
+      } else {
+        throw new Error('새 액세스 토큰을 받지 못했습니다.');
+      }
+    } catch (error) {
+      console.error('토큰 갱신 오류:', error);
+      // 갱신 실패 시 로그아웃 처리
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userInfo');
+      navigate('/');
+      return null;
+    }
+  }, [API_URL, navigate]);
+
+  // WebSocket 연결 함수를 useCallback으로 분리 - 지수 백오프 적용
+  const connectWebSocket = useCallback(async (token: string, username: string) => {
+    // 먼저 서버 상태 확인
+    const isServerOnline = await checkServerStatus();
+    if (!isServerOnline) {
+      setConnectionError('서버가 오프라인 상태입니다. 잠시 후 다시 시도해주세요.');
+      // 30초 후 서버 상태 재확인
+      setTimeout(checkServerStatus, 30000);
+      return;
+    }
+
+    if (reconnectAttemptsRef.current >= MAX_RECONNECT_ATTEMPTS) {
       setConnectionError('서버 연결에 실패했습니다. 페이지를 새로고침 해주세요.');
       return;
     }
 
     // 토큰 유효성 검사
     if (!isTokenValid(token)) {
-      console.error('유효하지 않은 토큰입니다. 로그인 페이지로 이동합니다.');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('userInfo');
-      navigate('/');
-      return;
+      console.log('토큰이 만료되었습니다. 리프레시 토큰으로 갱신을 시도합니다.');
+      const newToken = await refreshToken();
+      if (!newToken) {
+        console.error('토큰 갱신에 실패했습니다. 로그인 페이지로 이동합니다.');
+        navigate('/');
+        return;
+      }
+      token = newToken;
     }
 
     console.log('WebSocket 연결 시도...');
@@ -95,13 +185,29 @@ const Chat = () => {
       만료시간: new Date(getTokenPayload(token)?.exp * 1000).toLocaleString()
     });
 
+    // 이전 연결 정리
+    if (clientRef.current && clientRef.current.connected) {
+      try {
+        await clientRef.current.deactivate();
+        console.log('이전 WebSocket 연결 정리 완료');
+      } catch (error) {
+        console.error('이전 WebSocket 연결 정리 중 오류:', error);
+      }
+    }
+
+    // 지수 백오프를 사용한 재연결 지연 시간 계산
+    const reconnectDelay = Math.min(
+      INITIAL_RECONNECT_DELAY * Math.pow(RECONNECT_BACKOFF_FACTOR, reconnectAttemptsRef.current),
+      MAX_RECONNECT_DELAY
+    );
+
     // STOMP 클라이언트 설정
     const client = new Client({
       webSocketFactory: () => new SockJS(WS_URL),
       connectHeaders: {
         Authorization: `Bearer ${token}`
       },
-      reconnectDelay: 5000,
+      reconnectDelay: reconnectDelay,
       heartbeatIncoming: 4000,
       heartbeatOutgoing: 4000,
       debug: function(str) {
@@ -153,10 +259,10 @@ const Chat = () => {
         try {
           client.publish({
             destination: `${APP_PREFIX}/chat/message`,
-            body: JSON.stringify(enterMessage),
             headers: {
               Authorization: `Bearer ${token}`
-            }
+            },
+            body: JSON.stringify(enterMessage)
           });
           console.log('Sent ENTER message');
         } catch (error) {
@@ -166,43 +272,61 @@ const Chat = () => {
       onDisconnect: () => {
         console.log('Disconnected from WebSocket');
         setIsConnected(false);
+        
+        // 이미 진행 중인 재연결 타이머가 있으면 취소
+        if (reconnectTimeoutRef.current !== null) {
+          window.clearTimeout(reconnectTimeoutRef.current);
+        }
+
         reconnectAttemptsRef.current++;
-        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-          setConnectionError('연결이 끊어졌습니다. 재연결을 시도합니다...');
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          const nextDelay = Math.min(
+            INITIAL_RECONNECT_DELAY * Math.pow(RECONNECT_BACKOFF_FACTOR, reconnectAttemptsRef.current),
+            MAX_RECONNECT_DELAY
+          );
+          
+          setConnectionError(`연결이 끊어졌습니다. ${Math.round(nextDelay / 1000)}초 후 재연결을 시도합니다...`);
+          
+          // 백오프 시간 후 재연결 시도
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            if (userInfo) {
+              const currentToken = localStorage.getItem('accessToken');
+              if (currentToken) {
+                connectWebSocket(currentToken, userInfo.username);
+              }
+            }
+          }, nextDelay);
+        } else {
+          setConnectionError('최대 재연결 시도 횟수를 초과했습니다. 페이지를 새로고침해 주세요.');
         }
       },
       onStompError: (frame) => {
         console.error('STOMP Error:', frame);
         setIsConnected(false);
-        reconnectAttemptsRef.current++;
         
-        // 401 에러는 인증 오류, 로그인 페이지로 리디렉션
+        // 401 에러는 인증 오류, 토큰 갱신 시도
         if (frame.headers.message && frame.headers.message.includes('401')) {
-          console.log('인증 오류: 로그인 페이지로 이동합니다.');
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('userInfo');
-          navigate('/');
-        } else if (reconnectAttemptsRef.current < maxReconnectAttempts) {
+          console.log('인증 오류: 토큰 갱신을 시도합니다.');
+          refreshToken().then(newToken => {
+            if (newToken && userInfo) {
+              connectWebSocket(newToken, userInfo.username);
+            }
+          });
+        } else if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
           setConnectionError('연결 오류가 발생했습니다. 재연결을 시도합니다...');
         }
       },
       onWebSocketError: (event) => {
         console.error('WebSocket Error:', event);
         setIsConnected(false);
-        reconnectAttemptsRef.current++;
-        if (reconnectAttemptsRef.current < maxReconnectAttempts) {
-          setConnectionError('연결 오류가 발생했습니다. 재연결을 시도합니다...');
-        } else {
-          console.log('최대 재연결 시도 횟수 초과: 로그인 페이지로 이동합니다.');
-          navigate('/');
-        }
+        // 서버 상태 확인
+        checkServerStatus();
       }
     });
 
     clientRef.current = client;
     client.activate();
-  }, [roomId, navigate]);
+  }, [roomId, navigate, checkServerStatus, refreshToken]);
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
@@ -214,13 +338,26 @@ const Chat = () => {
       return;
     }
 
+    // 서버 상태 먼저 확인
+    checkServerStatus();
+
     // 토큰 유효성 검사
     if (!isTokenValid(token)) {
-      console.log('유효하지 않은 토큰입니다. 로그인 페이지로 이동합니다.');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('userInfo');
-      navigate('/');
+      console.log('유효하지 않은 토큰입니다. 리프레시를 시도합니다.');
+      refreshToken().then(newToken => {
+        if (!newToken) {
+          navigate('/');
+        } else if (storedUserInfo) {
+          try {
+            const parsedUserInfo = JSON.parse(storedUserInfo);
+            setUserInfo(parsedUserInfo);
+            connectWebSocket(newToken, parsedUserInfo.username);
+          } catch (error) {
+            console.error('사용자 정보 파싱 오류:', error);
+            navigate('/');
+          }
+        }
+      });
       return;
     }
 
@@ -249,22 +386,33 @@ const Chat = () => {
     }
 
     return () => {
+      // 컴포넌트 언마운트 시 실행되는 cleanup 함수
+      if (reconnectTimeoutRef.current !== null) {
+        window.clearTimeout(reconnectTimeoutRef.current);
+        reconnectTimeoutRef.current = null;
+      }
+      
       if (clientRef.current) {
-        if (clientRef.current.connected) {
-          try {
-            // LEAVE 메시지 전송 (선택적)
-            // 모든 리소스 정리를 위해 deactivate 호출
+        try {
+          // 연결된 상태에서만 deactivate 호출
+          if (clientRef.current.connected) {
             clientRef.current.deactivate();
-          } catch (err) {
-            console.error('웹소켓 연결 종료 중 오류:', err);
           }
+        } catch (err) {
+          console.error('웹소켓 연결 종료 중 오류:', err);
         }
       }
     };
-  }, [navigate, connectWebSocket]);
+  }, [navigate, connectWebSocket, checkServerStatus, refreshToken]);
 
   const sendMessage = () => {
-    if (!message.trim() || !clientRef.current || !userInfo || !isConnected) return;
+    if (!message.trim() || !clientRef.current || !userInfo) return;
+    
+    // 연결 상태 확인
+    if (!isConnected) {
+      setConnectionError('메시지를 보낼 수 없습니다. 연결이 끊어졌습니다.');
+      return;
+    }
 
     const token = localStorage.getItem('accessToken');
     if (!token) {
@@ -274,13 +422,20 @@ const Chat = () => {
 
     // 토큰 유효성 검사
     if (!isTokenValid(token)) {
-      console.log('유효하지 않은 토큰입니다. 로그인 페이지로 이동합니다.');
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
-      localStorage.removeItem('userInfo');
-      navigate('/');
+      console.log('토큰이 만료되었습니다. 갱신을 시도합니다.');
+      refreshToken().then(newToken => {
+        if (newToken) {
+          sendMessageWithToken(newToken);
+        }
+      });
       return;
     }
+
+    sendMessageWithToken(token);
+  };
+
+  const sendMessageWithToken = (token: string) => {
+    if (!message.trim() || !clientRef.current || !userInfo || !isConnected) return;
 
     const chatMessage = {
       type: MessageType.TALK,
@@ -294,10 +449,10 @@ const Chat = () => {
       console.log('Sending message:', chatMessage);
       clientRef.current.publish({
         destination: `${APP_PREFIX}/chat/message`,
-        body: JSON.stringify(chatMessage),
         headers: {
           Authorization: `Bearer ${token}`
-        }
+        },
+        body: JSON.stringify(chatMessage)
       });
       setMessage('');
     } catch (error) {
@@ -308,9 +463,21 @@ const Chat = () => {
 
   const handleLogout = () => {
     // 로그아웃 시 WebSocket 연결 해제 및 로컬 스토리지 정보 삭제
-    if (clientRef.current) {
-      clientRef.current.deactivate();
+    if (reconnectTimeoutRef.current !== null) {
+      window.clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
     }
+    
+    if (clientRef.current) {
+      try {
+        if (clientRef.current.connected) {
+          clientRef.current.deactivate();
+        }
+      } catch (error) {
+        console.error('로그아웃 중 WebSocket 연결 해제 오류:', error);
+      }
+    }
+    
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
     localStorage.removeItem('userInfo');
@@ -318,30 +485,16 @@ const Chat = () => {
   };
 
   const handleReconnect = () => {
+    reconnectAttemptsRef.current = 0;
+    setConnectionError('서버에 다시 연결 중...');
+    
     const token = localStorage.getItem('accessToken');
-    const storedUserInfo = localStorage.getItem('userInfo');
-
-    if (!token || !storedUserInfo) {
+    if (!token || !userInfo) {
       navigate('/');
       return;
     }
 
-    try {
-      reconnectAttemptsRef.current = 0;
-      setConnectionError(null);
-      
-      // 기존 클라이언트가 있으면 정리
-      if (clientRef.current) {
-        clientRef.current.deactivate();
-      }
-      
-      // 사용자 정보 다시 로드
-      const parsedUserInfo = JSON.parse(storedUserInfo);
-      connectWebSocket(token, parsedUserInfo.username);
-    } catch (error) {
-      console.error('수동 재연결 중 오류:', error);
-      setConnectionError('재연결 중 오류가 발생했습니다.');
-    }
+    connectWebSocket(token, userInfo.username);
   };
 
   if (!userInfo) {
@@ -367,6 +520,15 @@ const Chat = () => {
         </button>
       </div>
       <p>Welcome, {userInfo.username}!</p>
+      
+      {/* 서버 상태 표시 */}
+      <div style={{ marginBottom: '10px' }}>
+        <span>서버 상태: </span>
+        {serverStatus === 'checking' && <span style={{ color: 'orange' }}>확인 중...</span>}
+        {serverStatus === 'online' && <span style={{ color: 'green' }}>온라인 ✓</span>}
+        {serverStatus === 'offline' && <span style={{ color: 'red' }}>오프라인 ✗</span>}
+      </div>
+      
       {connectionError && (
         <div>
           <p style={{ color: 'red' }}>{connectionError}</p>
@@ -386,9 +548,11 @@ const Chat = () => {
           </button>
         </div>
       )}
+      
       {!isConnected && !connectionError && (
         <p style={{ color: 'orange' }}>서버에 연결 중...</p>
       )}
+      
       {isConnected && (
         <p style={{ color: 'green' }}>서버에 연결되었습니다 ✓</p>
       )}
@@ -412,6 +576,11 @@ const Chat = () => {
           overflowY: 'auto',
         }}
       >
+        {messages.length === 0 && (
+          <div style={{ textAlign: 'center', color: '#666', marginTop: '180px' }}>
+            메시지가 없습니다. 첫 메시지를 보내보세요!
+          </div>
+        )}
         {messages.map((msg, index) => (
           <div key={index} style={{ marginBottom: '10px' }}>
             <strong>{msg.sender}: </strong>

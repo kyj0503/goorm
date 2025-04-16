@@ -38,7 +38,7 @@ const Callback = () => {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ code, state }),
+          body: JSON.stringify({ code }),
         });
 
         console.log('서버 응답 상태:', response.status);
