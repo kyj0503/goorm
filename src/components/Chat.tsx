@@ -42,6 +42,17 @@ const Chat = () => {
   const maxReconnectAttempts = 3;
   const receivedMsgIds = useRef<Set<string>>(new Set()); // 중복 메시지 처리를 위한 ID 저장소
 
+  // 토큰 유효성 검사
+  const isTokenValid = (token: string) => {
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.exp * 1000 > Date.now();
+    } catch (e) {
+      console.error('토큰 형식이 잘못되었습니다:', e);
+      return false;
+    }
+  };
+
   // WebSocket 연결 함수를 useCallback으로 분리
   const connectWebSocket = useCallback((token: string, username: string) => {
     if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
@@ -49,10 +60,21 @@ const Chat = () => {
       return;
     }
 
+    // 토큰 유효성 검사
+    if (!isTokenValid(token)) {
+      console.error('유효하지 않은 토큰입니다. 로그인 페이지로 이동합니다.');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userInfo');
+      navigate('/');
+      return;
+    }
+
+    console.log('WebSocket 연결 시도...');
+
     // STOMP 클라이언트 설정
     const client = new Client({
       webSocketFactory: () => new SockJS(WS_URL),
-      // 인증 헤더 다시 활성화
       connectHeaders: {
         Authorization: `Bearer ${token}`
       },
@@ -130,7 +152,13 @@ const Chat = () => {
         console.error('STOMP Error:', frame);
         setIsConnected(false);
         reconnectAttemptsRef.current++;
+        
+        // 401 에러는 인증 오류, 로그인 페이지로 리디렉션
         if (frame.headers.message && frame.headers.message.includes('401')) {
+          console.log('인증 오류: 로그인 페이지로 이동합니다.');
+          localStorage.removeItem('accessToken');
+          localStorage.removeItem('refreshToken');
+          localStorage.removeItem('userInfo');
           navigate('/');
         } else if (reconnectAttemptsRef.current < maxReconnectAttempts) {
           setConnectionError('연결 오류가 발생했습니다. 재연결을 시도합니다...');
@@ -143,6 +171,7 @@ const Chat = () => {
         if (reconnectAttemptsRef.current < maxReconnectAttempts) {
           setConnectionError('연결 오류가 발생했습니다. 재연결을 시도합니다...');
         } else {
+          console.log('최대 재연결 시도 횟수 초과: 로그인 페이지로 이동합니다.');
           navigate('/');
         }
       }
@@ -157,6 +186,17 @@ const Chat = () => {
     const storedUserInfo = localStorage.getItem('userInfo');
     
     if (!token) {
+      console.log('액세스 토큰이 없습니다. 로그인 페이지로 이동합니다.');
+      navigate('/');
+      return;
+    }
+
+    // 토큰 유효성 검사
+    if (!isTokenValid(token)) {
+      console.log('유효하지 않은 토큰입니다. 로그인 페이지로 이동합니다.');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userInfo');
       navigate('/');
       return;
     }
@@ -201,6 +241,16 @@ const Chat = () => {
       return;
     }
 
+    // 토큰 유효성 검사
+    if (!isTokenValid(token)) {
+      console.log('유효하지 않은 토큰입니다. 로그인 페이지로 이동합니다.');
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('userInfo');
+      navigate('/');
+      return;
+    }
+
     const chatMessage = {
       type: MessageType.TALK,
       roomId,
@@ -225,13 +275,39 @@ const Chat = () => {
     }
   };
 
+  const handleLogout = () => {
+    // 로그아웃 시 WebSocket 연결 해제 및 로컬 스토리지 정보 삭제
+    if (clientRef.current) {
+      clientRef.current.deactivate();
+    }
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('userInfo');
+    navigate('/');
+  };
+
   if (!userInfo) {
     return <div>Loading...</div>;
   }
 
   return (
     <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-      <h1>Simple Chat</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h1>Simple Chat</h1>
+        <button 
+          onClick={handleLogout}
+          style={{ 
+            backgroundColor: '#dc3545', 
+            color: 'white', 
+            border: 'none', 
+            padding: '8px 15px',
+            borderRadius: '4px',
+            cursor: 'pointer'
+          }}
+        >
+          로그아웃
+        </button>
+      </div>
       <p>Welcome, {userInfo.username}!</p>
       {connectionError && (
         <p style={{ color: 'red' }}>{connectionError}</p>
