@@ -29,6 +29,21 @@ interface UserInfo {
   email: string;
 }
 
+// JWT 토큰에서 페이로드 추출
+const getTokenPayload = (token: string) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    console.error('JWT 토큰 디코딩 오류:', e);
+    return null;
+  }
+};
+
 const Chat = () => {
   const navigate = useNavigate();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -42,10 +57,13 @@ const Chat = () => {
   const maxReconnectAttempts = 3;
   const receivedMsgIds = useRef<Set<string>>(new Set()); // 중복 메시지 처리를 위한 ID 저장소
 
-  // 토큰 유효성 검사
+  // 토큰 유효성 검사 - 권한 검사 제외
   const isTokenValid = (token: string) => {
     try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
+      const payload = getTokenPayload(token);
+      if (!payload) return false;
+      
+      // 만료 시간만 확인
       return payload.exp * 1000 > Date.now();
     } catch (e) {
       console.error('토큰 형식이 잘못되었습니다:', e);
@@ -71,6 +89,11 @@ const Chat = () => {
     }
 
     console.log('WebSocket 연결 시도...');
+    console.log('WebSocket URL:', WS_URL);
+    console.log('JWT 토큰 정보:', {
+      발행시간: new Date(getTokenPayload(token)?.iat * 1000).toLocaleString(),
+      만료시간: new Date(getTokenPayload(token)?.exp * 1000).toLocaleString()
+    });
 
     // STOMP 클라이언트 설정
     const client = new Client({
@@ -227,7 +250,15 @@ const Chat = () => {
 
     return () => {
       if (clientRef.current) {
-        clientRef.current.deactivate();
+        if (clientRef.current.connected) {
+          try {
+            // LEAVE 메시지 전송 (선택적)
+            // 모든 리소스 정리를 위해 deactivate 호출
+            clientRef.current.deactivate();
+          } catch (err) {
+            console.error('웹소켓 연결 종료 중 오류:', err);
+          }
+        }
       }
     };
   }, [navigate, connectWebSocket]);
@@ -286,6 +317,33 @@ const Chat = () => {
     navigate('/');
   };
 
+  const handleReconnect = () => {
+    const token = localStorage.getItem('accessToken');
+    const storedUserInfo = localStorage.getItem('userInfo');
+
+    if (!token || !storedUserInfo) {
+      navigate('/');
+      return;
+    }
+
+    try {
+      reconnectAttemptsRef.current = 0;
+      setConnectionError(null);
+      
+      // 기존 클라이언트가 있으면 정리
+      if (clientRef.current) {
+        clientRef.current.deactivate();
+      }
+      
+      // 사용자 정보 다시 로드
+      const parsedUserInfo = JSON.parse(storedUserInfo);
+      connectWebSocket(token, parsedUserInfo.username);
+    } catch (error) {
+      console.error('수동 재연결 중 오류:', error);
+      setConnectionError('재연결 중 오류가 발생했습니다.');
+    }
+  };
+
   if (!userInfo) {
     return <div>Loading...</div>;
   }
@@ -310,10 +368,29 @@ const Chat = () => {
       </div>
       <p>Welcome, {userInfo.username}!</p>
       {connectionError && (
-        <p style={{ color: 'red' }}>{connectionError}</p>
+        <div>
+          <p style={{ color: 'red' }}>{connectionError}</p>
+          <button 
+            onClick={handleReconnect}
+            style={{ 
+              backgroundColor: '#28a745', 
+              color: 'white', 
+              border: 'none', 
+              padding: '5px 10px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              marginBottom: '10px'
+            }}
+          >
+            수동 재연결 시도
+          </button>
+        </div>
       )}
       {!isConnected && !connectionError && (
         <p style={{ color: 'orange' }}>서버에 연결 중...</p>
+      )}
+      {isConnected && (
+        <p style={{ color: 'green' }}>서버에 연결되었습니다 ✓</p>
       )}
       
       <div style={{ marginBottom: '20px' }}>
@@ -354,10 +431,18 @@ const Chat = () => {
           onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
           placeholder="Type a message..."
           style={{ width: '80%', padding: '5px', marginRight: '10px' }}
+          disabled={!isConnected}
         />
         <button
           onClick={sendMessage}
-          style={{ padding: '5px 15px', backgroundColor: '#007bff', color: 'white', border: 'none' }}
+          disabled={!isConnected}
+          style={{ 
+            padding: '5px 15px', 
+            backgroundColor: isConnected ? '#007bff' : '#6c757d', 
+            color: 'white', 
+            border: 'none',
+            cursor: isConnected ? 'pointer' : 'not-allowed'
+          }}
         >
           Send
         </button>
