@@ -30,7 +30,7 @@ jobs:
         run: npm run build
         env:
           VITE_API_URL: 'https://ide.yeonjae.kr'
-          VITE_WS_URL: 'wss://ide.yeonjae.kr/ws/chat'
+          VITE_WS_URL: 'https://ide.yeonjae.kr/ws/chat'
           VITE_TOPIC_PREFIX: '/topic'
           VITE_APP_PREFIX: '/app'
           VITE_GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
