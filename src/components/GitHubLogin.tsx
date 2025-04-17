@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 
 interface GitHubLoginProps {
-  onLogin: (token: string) => void;
+  // 미사용 프롭스 제거
+  // onLogin: (token: string) => void;
 }
 
-const GitHubLogin = ({ onLogin }: GitHubLoginProps) => {
+const GitHubLogin = ({}: GitHubLoginProps) => {
   const [isLoading, setIsLoading] = useState(false);
   const [clientInfo, setClientInfo] = useState({ id: '', redirectUri: '' });
 

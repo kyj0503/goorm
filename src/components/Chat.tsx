@@ -59,7 +59,6 @@ const Chat = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
-  const [hasServerError, setHasServerError] = useState(false);
   
   const clientRef = useRef<Client | null>(null);
   const subscriptionRef = useRef<any>(null); // 구독 참조 추가
@@ -94,17 +93,14 @@ const Chat = () => {
       
       if (response.ok) {
         setServerStatus('online');
-        setHasServerError(false);
         return true;
       } else {
         setServerStatus('offline');
-        setHasServerError(true);
         return false;
       }
     } catch (error) {
       console.error('서버 상태 확인 중 오류:', error);
       setServerStatus('offline');
-      setHasServerError(true);
       return false;
     }
   }, [API_URL]);

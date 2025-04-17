@@ -57,7 +57,7 @@ function AppRoutes() {
           isAuthenticated() ? (
             <Navigate to="/chat" replace />
           ) : (
-            <GitHubLogin onLogin={() => {}} />
+            <GitHubLogin />
           )
         } 
       />
