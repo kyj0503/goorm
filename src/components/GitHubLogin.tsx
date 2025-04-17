@@ -44,10 +44,15 @@ const GitHubLogin = ({}: GitHubLoginProps) => {
     
     console.log('GitHub 로그인 시도:', {
       clientId: `${clientId.substring(0, 5)}...`,
-      redirectUri
+      redirectUri,
+      mode: import.meta.env.MODE
     });
     
-    window.location.href = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
+    // URL을 구성하고 로그에 출력
+    const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&scope=${scope}&state=${state}`;
+    console.log('GitHub 인증 URL:', githubAuthUrl);
+    
+    window.location.href = githubAuthUrl;
   };
 
   return (

@@ -8,9 +8,13 @@ const Callback = () => {
 
   useEffect(() => {
     const handleCallback = async () => {
+      // URL 파라미터 디버깅
+      console.log('현재 URL:', window.location.href);
       const urlParams = new URLSearchParams(window.location.search);
       const code = urlParams.get('code');
       const state = urlParams.get('state');
+
+      console.log('GitHub 콜백 파라미터:', { code: code?.substring(0, 5) + '...', state });
 
       if (!code || !state) {
         console.error('Missing code or state');
