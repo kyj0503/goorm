@@ -44,8 +44,10 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 function AppRoutes() {
   const location = useLocation();
   
+  console.log('현재 경로:', location.pathname);
+  
   // Callback 페이지에서는 리다이렉트하지 않음
-  if (location.pathname === '/callback') {
+  if (location.pathname === '/callback' || location.pathname === '/simple-chat/callback') {
     return <Callback />;
   }
 
@@ -57,7 +59,7 @@ function AppRoutes() {
           isAuthenticated() ? (
             <Navigate to="/chat" replace />
           ) : (
-            <GitHubLogin onLogin={() => {}} />
+            <GitHubLogin />
           )
         } 
       />
@@ -77,8 +79,11 @@ function AppRoutes() {
 }
 
 function App() {
+  // GitHub Pages 배포 시 basename을 설정
+  const basename = import.meta.env.MODE === 'production' ? '/simple-chat' : '';
+  
   return (
-    <Router>
+    <Router basename={basename}>
       <AppRoutes />
     </Router>
   );
