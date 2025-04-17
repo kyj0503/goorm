@@ -66,6 +66,19 @@ const Chat = () => {
   const reconnectTimeoutRef = useRef<number | null>(null);
   const receivedMsgIds = useRef<Set<string>>(new Set()); // 중복 메시지 처리를 위한 ID 저장소
 
+  // 자동 스크롤을 위한 ref 추가
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 메시지 목록이 업데이트될 때 스크롤을 아래로 이동
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // 메시지 전송 후 스크롤 이동
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
   // 토큰 유효성 검사 - 만료 시간 및 형식 확인
   const isTokenValid = (token: string) => {
     try {
@@ -561,6 +574,8 @@ const Chat = () => {
         body: JSON.stringify(chatMessage)
       });
       setMessage('');
+      // 메시지 전송 후 스크롤 아래로 이동
+      setTimeout(scrollToBottom, 100);
     } catch (error) {
       console.error('Error sending message:', error);
       setConnectionError('메시지 전송에 실패했습니다.');
@@ -689,6 +704,7 @@ const Chat = () => {
           marginBottom: '20px',
           padding: '10px',
           overflowY: 'auto',
+          textAlign: 'left'
         }}
       >
         {messages.length === 0 && (
@@ -697,14 +713,26 @@ const Chat = () => {
           </div>
         )}
         {messages.map((msg, index) => (
-          <div key={index} style={{ marginBottom: '10px' }}>
+          <div 
+            key={index} 
+            style={{ 
+              marginBottom: '10px',
+              textAlign: 'left',
+              padding: '8px',
+              borderRadius: '8px',
+              backgroundColor: msg.sender === userInfo?.username ? '#e6f7ff' : '#f5f5f5',
+              alignSelf: 'flex-start',
+              maxWidth: '80%'
+            }}
+          >
             <strong>{msg.sender}: </strong>
             {msg.message}
-            <small style={{ display: 'block', color: '#666' }}>
+            <small style={{ display: 'block', color: '#666', fontSize: '0.8em', marginTop: '4px' }}>
               {new Date(msg.timestamp).toLocaleTimeString()}
             </small>
           </div>
         ))}
+        <div ref={messagesEndRef} />
       </div>
 
       <div>
