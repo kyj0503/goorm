@@ -29,7 +29,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_API_URL: 'http://3.37.229.220:8080'
+          VITE_API_URL: 'https://corsproxy.io/?http://3.37.229.220:8080'
           VITE_WS_URL: 'http://3.37.229.220:8080/ws/chat'
           VITE_TOPIC_PREFIX: '/topic'
           VITE_APP_PREFIX: '/app'

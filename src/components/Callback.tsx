@@ -36,8 +36,16 @@ const Callback = () => {
           return;
         }
 
-        console.log(`${API_URL}/api/users/login으로 요청 전송 중...`);
-        const response = await fetch(`${API_URL}/api/users/login`, {
+        // CORS 프록시 사용 여부 확인 및 요청 URL 구성
+        let requestUrl = `${API_URL}/api/users/login`;
+        
+        // GitHub Pages 환경에서 CORS 프록시 사용시 URL 조정
+        if (import.meta.env.MODE === 'production' && API_URL.includes('corsproxy.io')) {
+          console.log('CORS 프록시를 통해 요청합니다:', requestUrl);
+        }
+
+        console.log(`${requestUrl}으로 요청 전송 중...`);
+        const response = await fetch(requestUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
