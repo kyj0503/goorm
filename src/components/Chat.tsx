@@ -59,6 +59,7 @@ const Chat = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   
   const clientRef = useRef<Client | null>(null);
   const subscriptionRef = useRef<any>(null); // 구독 참조 추가
@@ -358,6 +359,9 @@ const Chat = () => {
             // 구독 참조 저장
             subscriptionRef.current = subscription;
             console.log('초기 채팅방 구독 완료:', roomId);
+            
+            // 이전 메시지 로드
+            fetchPreviousMessages(roomId);
           } catch (e) {
             console.error('채팅방 구독 중 오류:', e);
             // 구독 오류 시 5초 후 재시도
@@ -608,6 +612,9 @@ const Chat = () => {
           subscriptionRef.current = subscription;
           console.log('새 채팅방 구독 완료:', roomId);
           
+          // 이전 메시지 로드
+          fetchPreviousMessages(roomId);
+          
           // 새 방 입장 메시지 전송
           if (clientRef.current.connected) {
             // enterFlag를 사용하여 중복 ENTER 메시지 방지
@@ -674,6 +681,72 @@ const Chat = () => {
       }
     }
   }, [roomId, isConnected, TOPIC_PREFIX, APP_PREFIX, userInfo, handleReconnect]);
+
+  // 이전 채팅 메시지 로드 함수
+  const fetchPreviousMessages = useCallback(async (currentRoomId: string) => {
+    try {
+      setIsLoadingMessages(true);
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        console.error('이전 메시지 로드 실패: 인증 토큰이 없습니다.');
+        return;
+      }
+      
+      console.log(`채팅방 ${currentRoomId}의 이전 메시지 로드 중...`);
+      
+      // 페이징 처리된 채팅 메시지 조회 API 호출
+      const response = await fetch(`${API_URL}/api/chat/rooms/${currentRoomId}/messages/paged?page=0&size=50`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`이전 메시지 로드 실패: ${response.status} ${response.statusText}`);
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('이전 메시지 로드 성공:', data);
+      
+      // 페이징 응답 구조에 따라 content 배열 접근 (Spring Data의 일반적인 페이징 응답 구조)
+      const previousMessages = data.content || data;
+      
+      if (Array.isArray(previousMessages) && previousMessages.length > 0) {
+        // 시간순으로 정렬 (오래된 메시지부터)
+        const sortedMessages = [...previousMessages].sort((a, b) => 
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        
+        // 이미 로드된 각 메시지의 ID를 receivedMsgIds에 추가
+        sortedMessages.forEach(msg => {
+          const msgId = `${msg.timestamp}-${msg.sender}-${msg.message}`;
+          receivedMsgIds.current.add(msgId);
+        });
+        
+        // 메시지 목록 설정
+        setMessages(sortedMessages);
+        console.log(`${sortedMessages.length}개의 이전 메시지를 로드했습니다.`);
+        
+        // 메시지가 로드된 후 스크롤 이동
+        setTimeout(scrollToBottom, 100);
+      } else {
+        console.log('이전 메시지가 없습니다.');
+      }
+    } catch (error) {
+      console.error('이전 메시지 로드 중 오류:', error);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [API_URL]);
+
+  // 초기 구독 완료 후 이전 메시지 로드 추가
+  useEffect(() => {
+    // 채팅방 구독이 완료되고 연결 상태일 때만 이전 메시지 로드
+    if (isConnected && roomId && subscriptionRef.current) {
+      fetchPreviousMessages(roomId);
+    }
+  }, [isConnected, roomId, fetchPreviousMessages]);
 
   const sendMessage = () => {
     if (!message.trim() || !clientRef.current || !userInfo) return;
