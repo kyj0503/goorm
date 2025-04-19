@@ -29,6 +29,15 @@ interface UserInfo {
   email: string;
 }
 
+interface ChatRoom {
+  roomId: string;
+  name: string;
+  description: string;
+  createdBy: string;
+  createdAt: string;
+  participants: string[];
+}
+
 // 백오프 관련 상수
 const INITIAL_RECONNECT_DELAY = 1000; // 초기 재연결 지연 시간 (1초)
 const MAX_RECONNECT_DELAY = 30000; // 최대 재연결 지연 시간 (30초)
@@ -60,6 +69,14 @@ const Chat = () => {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [serverStatus, setServerStatus] = useState<'online' | 'offline' | 'checking'>('checking');
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  
+  // 채팅방 관련 상태 추가
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomDescription, setNewRoomDescription] = useState('');
+  const [showCreateRoomForm, setShowCreateRoomForm] = useState(false);
+  const [userRole, setUserRole] = useState<string>('USER');
   
   const clientRef = useRef<Client | null>(null);
   const subscriptionRef = useRef<any>(null); // 구독 참조 추가
@@ -867,13 +884,200 @@ const Chat = () => {
     }
   };
 
+  // 채팅방 목록 로드 함수
+  const fetchChatRooms = useCallback(async () => {
+    try {
+      setIsLoadingRooms(true);
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        console.error('채팅방 목록 로드 실패: 인증 토큰이 없습니다.');
+        return;
+      }
+      
+      const response = await fetch(`${API_URL}/api/chat/rooms`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`채팅방 목록 로드 실패: ${response.status} ${response.statusText}`);
+        return;
+      }
+      
+      const data = await response.json();
+      setChatRooms(data);
+      console.log('채팅방 목록 로드 성공:', data);
+    } catch (error) {
+      console.error('채팅방 목록 로드 중 오류:', error);
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  }, [API_URL]);
+  
+  // 채팅방 생성 함수
+  const createChatRoom = async () => {
+    try {
+      if (!newRoomName.trim()) {
+        alert('채팅방 이름을 입력해주세요.');
+        return;
+      }
+      
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        console.error('채팅방 생성 실패: 인증 토큰이 없습니다.');
+        return;
+      }
+      
+      const response = await fetch(`${API_URL}/api/chat/rooms`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: newRoomName,
+          description: newRoomDescription,
+          createdBy: userInfo?.username
+        })
+      });
+      
+      if (!response.ok) {
+        console.error(`채팅방 생성 실패: ${response.status} ${response.statusText}`);
+        if (response.status === 403) {
+          alert('채팅방 생성 권한이 없습니다. 관리자만 채팅방을 생성할 수 있습니다.');
+        } else {
+          alert('채팅방 생성에 실패했습니다.');
+        }
+        return;
+      }
+      
+      const data = await response.json();
+      console.log('채팅방 생성 성공:', data);
+      
+      // 폼 초기화 및 채팅방 목록 갱신
+      setNewRoomName('');
+      setNewRoomDescription('');
+      setShowCreateRoomForm(false);
+      fetchChatRooms();
+    } catch (error) {
+      console.error('채팅방 생성 중 오류:', error);
+      alert('채팅방 생성 중 오류가 발생했습니다.');
+    }
+  };
+  
+  // 채팅방 삭제 함수
+  const deleteChatRoom = async (targetRoomId: string) => {
+    try {
+      if (!confirm('정말로 이 채팅방을 삭제하시겠습니까?')) {
+        return;
+      }
+      
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        console.error('채팅방 삭제 실패: 인증 토큰이 없습니다.');
+        return;
+      }
+      
+      const response = await fetch(`${API_URL}/api/chat/rooms/${targetRoomId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`채팅방 삭제 실패: ${response.status} ${response.statusText}`);
+        if (response.status === 403) {
+          alert('채팅방 삭제 권한이 없습니다. 관리자만 채팅방을 삭제할 수 있습니다.');
+        } else {
+          alert('채팅방 삭제에 실패했습니다.');
+        }
+        return;
+      }
+      
+      console.log('채팅방 삭제 성공');
+      
+      // 채팅방 목록 갱신
+      fetchChatRooms();
+      
+      // 현재 접속 중인 채팅방이 삭제된 경우 첫 번째 채팅방으로 이동
+      if (targetRoomId === roomId) {
+        if (chatRooms.length > 1) {
+          const newRoomId = chatRooms.find(room => room.roomId !== targetRoomId)?.roomId || '';
+          setRoomId(newRoomId);
+        } else {
+          setRoomId('');
+          setMessages([]);
+        }
+      }
+    } catch (error) {
+      console.error('채팅방 삭제 중 오류:', error);
+      alert('채팅방 삭제 중 오류가 발생했습니다.');
+    }
+  };
+  
+  // 채팅방 입장 함수
+  const enterChatRoom = async (roomId: string) => {
+    try {
+      const token = localStorage.getItem('accessToken');
+      if (!token) {
+        console.error('채팅방 입장 실패: 인증 토큰이 없습니다.');
+        return;
+      }
+      
+      const response = await fetch(`${API_URL}/api/chat/rooms/${roomId}/join`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      
+      if (!response.ok) {
+        console.error(`채팅방 입장 실패: ${response.status} ${response.statusText}`);
+        alert('채팅방 입장에 실패했습니다.');
+        return;
+      }
+      
+      console.log('채팅방 입장 성공');
+      
+      // 채팅방 ID 변경 (useEffect에서 구독 처리)
+      setRoomId(roomId);
+      
+      // 메시지 초기화
+      setMessages([]);
+    } catch (error) {
+      console.error('채팅방 입장 중 오류:', error);
+      alert('채팅방 입장 중 오류가 발생했습니다.');
+    }
+  };
+  
+  // 토큰에서 사용자 역할 추출
+  useEffect(() => {
+    const token = localStorage.getItem('accessToken');
+    if (token) {
+      const payload = getTokenPayload(token);
+      if (payload && payload.role) {
+        setUserRole(payload.role);
+      }
+    }
+  }, []);
+  
+  // 초기 로드 시 채팅방 목록 조회
+  useEffect(() => {
+    if (isConnected) {
+      fetchChatRooms();
+    }
+  }, [isConnected, fetchChatRooms]);
+
   if (!userInfo) {
     return <div>Loading...</div>;
   }
 
   return (
-    <div style={{ padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
         <h1>Simple Chat</h1>
         <button 
           onClick={handleLogout}
@@ -927,77 +1131,218 @@ const Chat = () => {
         <p style={{ color: 'green' }}>서버에 연결되었습니다 ✓</p>
       )}
       
-      <div style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value)}
-          placeholder="Room ID"
-          style={{ marginRight: '10px', padding: '5px' }}
-        />
-      </div>
-
-      <div
-        style={{
-          height: '400px',
-          border: '1px solid #ccc',
-          marginBottom: '20px',
-          padding: '10px',
-          overflowY: 'auto',
-          textAlign: 'left'
-        }}
-      >
-        {messages.length === 0 && (
-          <div style={{ textAlign: 'center', color: '#666', marginTop: '180px' }}>
-            메시지가 없습니다. 첫 메시지를 보내보세요!
+      {/* 채팅방 목록 및 관리 UI */}
+      <div style={{ display: 'flex', marginBottom: '20px' }}>
+        {/* 채팅방 목록 */}
+        <div style={{ width: '30%', marginRight: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <h3 style={{ margin: '0' }}>채팅방 목록</h3>
+            {userRole === 'ADMIN' && (
+              <button
+                onClick={() => setShowCreateRoomForm(!showCreateRoomForm)}
+                style={{
+                  backgroundColor: '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  padding: '5px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  fontSize: '0.8rem'
+                }}
+              >
+                {showCreateRoomForm ? '취소' : '방 생성'}
+              </button>
+            )}
           </div>
-        )}
-        {messages.map((msg, index) => (
-          <div 
-            key={index} 
-            style={{ 
-              marginBottom: '10px',
-              textAlign: 'left',
-              padding: '8px',
-              borderRadius: '8px',
-              backgroundColor: msg.sender === userInfo?.username ? '#e6f7ff' : '#f5f5f5',
-              alignSelf: 'flex-start',
-              maxWidth: '80%'
+          
+          {/* 채팅방 생성 폼 */}
+          {showCreateRoomForm && (
+            <div style={{ marginBottom: '15px', padding: '10px', backgroundColor: '#f8f9fa', borderRadius: '4px' }}>
+              <input
+                type="text"
+                value={newRoomName}
+                onChange={(e) => setNewRoomName(e.target.value)}
+                placeholder="방 이름"
+                style={{ width: '100%', padding: '5px', marginBottom: '5px' }}
+              />
+              <input
+                type="text"
+                value={newRoomDescription}
+                onChange={(e) => setNewRoomDescription(e.target.value)}
+                placeholder="방 설명"
+                style={{ width: '100%', padding: '5px', marginBottom: '10px' }}
+              />
+              <button
+                onClick={createChatRoom}
+                style={{
+                  backgroundColor: '#28a745',
+                  color: 'white',
+                  border: 'none',
+                  padding: '5px 10px',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  width: '100%'
+                }}
+              >
+                생성하기
+              </button>
+            </div>
+          )}
+          
+          {/* 채팅방 목록 */}
+          <div style={{ 
+            height: '300px', 
+            overflowY: 'auto', 
+            border: '1px solid #ccc', 
+            borderRadius: '4px',
+            backgroundColor: '#f5f5f5'
+          }}>
+            {isLoadingRooms ? (
+              <div style={{ textAlign: 'center', padding: '20px' }}>로딩 중...</div>
+            ) : chatRooms.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
+                채팅방이 없습니다.
+              </div>
+            ) : (
+              chatRooms.map((room) => (
+                <div 
+                  key={room.roomId}
+                  style={{ 
+                    padding: '10px', 
+                    borderBottom: '1px solid #ddd',
+                    backgroundColor: room.roomId === roomId ? '#e6f7ff' : 'transparent',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div 
+                      style={{ flex: 1 }}
+                      onClick={() => enterChatRoom(room.roomId)}
+                    >
+                      <div style={{ fontWeight: 'bold' }}>{room.name}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#666' }}>{room.description}</div>
+                      <div style={{ fontSize: '0.7rem', color: '#999' }}>
+                        생성자: {room.createdBy} | 참여자: {room.participants?.length || 0}명
+                      </div>
+                    </div>
+                    {userRole === 'ADMIN' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteChatRoom(room.roomId);
+                        }}
+                        style={{
+                          backgroundColor: '#dc3545',
+                          color: 'white',
+                          border: 'none',
+                          padding: '3px 6px',
+                          borderRadius: '4px',
+                          cursor: 'pointer',
+                          fontSize: '0.7rem'
+                        }}
+                      >
+                        삭제
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          
+          <button
+            onClick={fetchChatRooms}
+            style={{
+              backgroundColor: '#6c757d',
+              color: 'white',
+              border: 'none',
+              padding: '5px 10px',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.8rem',
+              marginTop: '5px',
+              width: '100%'
             }}
           >
-            <strong>{msg.sender}: </strong>
-            {msg.message}
-            <small style={{ display: 'block', color: '#666', fontSize: '0.8em', marginTop: '4px' }}>
-              {new Date(msg.timestamp).toLocaleTimeString()}
-            </small>
+            새로고침
+          </button>
+        </div>
+        
+        {/* 채팅 영역 */}
+        <div style={{ width: '70%' }}>
+          <h3>
+            {chatRooms.find(room => room.roomId === roomId)?.name || roomId}
+          </h3>
+          <div
+            style={{
+              height: '400px',
+              border: '1px solid #ccc',
+              marginBottom: '20px',
+              padding: '10px',
+              overflowY: 'auto',
+              textAlign: 'left',
+              backgroundColor: '#fff'
+            }}
+          >
+            {isLoadingMessages ? (
+              <div style={{ textAlign: 'center', color: '#666', marginTop: '180px' }}>
+                메시지 로딩 중...
+              </div>
+            ) : messages.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#666', marginTop: '180px' }}>
+                메시지가 없습니다. 첫 메시지를 보내보세요!
+              </div>
+            ) : (
+              messages.map((msg, index) => (
+                <div 
+                  key={index} 
+                  style={{ 
+                    marginBottom: '10px',
+                    textAlign: 'left',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    backgroundColor: msg.sender === userInfo?.username ? '#e6f7ff' : '#f5f5f5',
+                    alignSelf: 'flex-start',
+                    maxWidth: '80%'
+                  }}
+                >
+                  <strong>{msg.sender}: </strong>
+                  {msg.message}
+                  <small style={{ display: 'block', color: '#666', fontSize: '0.8em', marginTop: '4px' }}>
+                    {new Date(msg.timestamp).toLocaleTimeString()}
+                  </small>
+                </div>
+              ))
+            )}
+            <div ref={messagesEndRef} />
           </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      <div>
-        <input
-          type="text"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-          placeholder="Type a message..."
-          style={{ width: '80%', padding: '5px', marginRight: '10px' }}
-          disabled={!isConnected}
-        />
-        <button
-          onClick={sendMessage}
-          disabled={!isConnected}
-          style={{ 
-            padding: '5px 15px', 
-            backgroundColor: isConnected ? '#007bff' : '#6c757d', 
-            color: 'white', 
-            border: 'none',
-            cursor: isConnected ? 'pointer' : 'not-allowed'
-          }}
-        >
-          Send
-        </button>
+          
+          <div>
+            <input
+              type="text"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+              placeholder="Type a message..."
+              style={{ width: '80%', padding: '8px', marginRight: '10px', borderRadius: '4px', border: '1px solid #ccc' }}
+              disabled={!isConnected || !roomId}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!isConnected || !roomId}
+              style={{ 
+                padding: '8px 15px', 
+                backgroundColor: (isConnected && roomId) ? '#007bff' : '#6c757d', 
+                color: 'white', 
+                border: 'none',
+                borderRadius: '4px',
+                cursor: (isConnected && roomId) ? 'pointer' : 'not-allowed'
+              }}
+            >
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
