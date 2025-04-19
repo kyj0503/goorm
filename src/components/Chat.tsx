@@ -318,6 +318,11 @@ const Chat = () => {
         
         // 잠시 지연 후 구독 설정 - 연결 완료 후 약간의 지연을 두어 안정화
         setTimeout(() => {
+          if (!roomId) {
+            console.log('roomId가 없어 구독을 설정하지 않습니다.');
+            return;
+          }
+
           // 기존 구독 해제
           if (subscriptionRef.current) {
             try {
@@ -345,28 +350,41 @@ const Chat = () => {
                 // ENTER 타입 메시지에 대한 추가 필터링
                 if (newMessage.type === MessageType.ENTER) {
                   // 최근 30초 이내에 같은 사용자의 입장 메시지가 있으면 무시
-                  const recentEnterMessages = messages.filter(m => 
-                    m.type === MessageType.ENTER && 
-                    m.sender === newMessage.sender &&
-                    new Date(m.timestamp).getTime() > Date.now() - 30000
-                  );
-                  
-                  if (recentEnterMessages.length > 0) {
-                    console.log('중복 입장 메시지 무시:', newMessage.sender);
-                    return;
-                  }
-                }
-                
-                // 메시지 중복 체크 (타임스탬프 + 내용을 이용한 간단한 해시)
-                const msgId = `${newMessage.timestamp}-${newMessage.sender}-${newMessage.message}`;
-                if (!receivedMsgIds.current.has(msgId)) {
-                  receivedMsgIds.current.add(msgId);
-                  setMessages((prev) => [...prev, newMessage]);
-                  
-                  // 주기적으로 오래된 메시지 ID 정리
-                  cleanupReceivedMsgIds();
+                  setMessages(prevMessages => {
+                    const recentEnterMessages = prevMessages.filter(m => 
+                      m.type === MessageType.ENTER && 
+                      m.sender === newMessage.sender &&
+                      new Date(m.timestamp).getTime() > Date.now() - 30000
+                    );
+                    
+                    if (recentEnterMessages.length > 0) {
+                      console.log('중복 입장 메시지 무시:', newMessage.sender);
+                      return prevMessages;
+                    }
+                    
+                    // 메시지 중복 체크 (타임스탬프 + 내용을 이용한 간단한 해시)
+                    const msgId = `${newMessage.timestamp}-${newMessage.sender}-${newMessage.message}`;
+                    if (!receivedMsgIds.current.has(msgId)) {
+                      receivedMsgIds.current.add(msgId);
+                      // 주기적으로 오래된 메시지 ID 정리
+                      cleanupReceivedMsgIds();
+                      return [...prevMessages, newMessage];
+                    } else {
+                      console.log('중복 메시지 무시:', msgId);
+                      return prevMessages;
+                    }
+                  });
                 } else {
-                  console.log('중복 메시지 무시:', msgId);
+                  // 일반 메시지 처리
+                  const msgId = `${newMessage.timestamp}-${newMessage.sender}-${newMessage.message}`;
+                  if (!receivedMsgIds.current.has(msgId)) {
+                    receivedMsgIds.current.add(msgId);
+                    setMessages(prev => [...prev, newMessage]);
+                    // 주기적으로 오래된 메시지 ID 정리
+                    cleanupReceivedMsgIds();
+                  } else {
+                    console.log('중복 메시지 무시:', msgId);
+                  }
                 }
               } catch (error) {
                 console.error('Error parsing message:', error);
@@ -456,9 +474,6 @@ const Chat = () => {
         }
 
         reconnectAttemptsRef.current++;
-        
-        // 강제로 클라이언트를 null로 설정하지 않고 참조는 유지
-        // 재연결 시 이전 연결 상태를 감지하기 위함
       }
     });
 
@@ -576,29 +591,47 @@ const Chat = () => {
 
   // 룸 ID 변경 시 새로 구독 설정
   useEffect(() => {
-    // 이미 연결되어 있고 토큰과 유저 정보가 있는 경우에만
-    if (isConnected && clientRef.current && userInfo) {
-      const token = localStorage.getItem('accessToken');
-      if (!token) return;
+    console.log(`roomId 변경 감지: ${roomId}`);
+    
+    // roomId가 비어있거나 연결이 되어있지 않은 경우 리턴
+    if (!roomId || !isConnected || !clientRef.current || !userInfo) {
+      return;
+    }
+    
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
 
-      // 구독 설정 함수 - 지연 실행을 위해 별도 함수로 분리
-      const setupSubscription = () => {
-        if (!clientRef.current || !clientRef.current.connected) {
-          console.log('STOMP 클라이언트가 연결되어 있지 않습니다. 재연결 시도...');
-          handleReconnect();
-          return;
+    // 구독 설정 함수 - 지연 실행을 위해 별도 함수로 분리
+    const setupSubscription = () => {
+      if (!clientRef.current || !clientRef.current.connected) {
+        console.log('STOMP 클라이언트가 연결되어 있지 않습니다. 재연결 시도...');
+        handleReconnect();
+        return;
+      }
+
+      try {
+        // 기존 구독이 있으면 해제
+        if (subscriptionRef.current) {
+          try {
+            subscriptionRef.current.unsubscribe();
+            subscriptionRef.current = null;
+            console.log('기존 구독 해제 완료');
+          } catch (e) {
+            console.error('구독 해제 중 오류:', e);
+          }
         }
-
-        try {
-          const subscription = clientRef.current.subscribe(`${TOPIC_PREFIX}/chat/room/${roomId}`, (message) => {
-            try {
-              const newMessage: ChatMessage = JSON.parse(message.body);
-              console.log('Received message:', newMessage);
-              
-              // ENTER 타입 메시지에 대한 추가 필터링
-              if (newMessage.type === MessageType.ENTER) {
-                // 최근 30초 이내에 같은 사용자의 입장 메시지가 있으면 무시
-                const recentEnterMessages = messages.filter(m => 
+        
+        console.log(`새 채팅방 ${roomId}에 구독 설정 중...`);
+        
+        const subscription = clientRef.current.subscribe(`${TOPIC_PREFIX}/chat/room/${roomId}`, (message) => {
+          try {
+            const newMessage: ChatMessage = JSON.parse(message.body);
+            console.log(`채팅방 ${roomId}에서 메시지 수신:`, newMessage);
+            
+            // ENTER 타입 메시지에 대한 추가 필터링
+            if (newMessage.type === MessageType.ENTER) {
+              setMessages(prevMessages => {
+                const recentEnterMessages = prevMessages.filter(m => 
                   m.type === MessageType.ENTER && 
                   m.sender === newMessage.sender &&
                   new Date(m.timestamp).getTime() > Date.now() - 30000
@@ -606,97 +639,89 @@ const Chat = () => {
                 
                 if (recentEnterMessages.length > 0) {
                   console.log('중복 입장 메시지 무시:', newMessage.sender);
-                  return;
+                  return prevMessages;
                 }
-              }
-              
-              // 메시지 중복 체크 (타임스탬프 + 내용을 이용한 간단한 해시)
+                
+                // 메시지 중복 체크 (타임스탬프 + 내용을 이용한 간단한 해시)
+                const msgId = `${newMessage.timestamp}-${newMessage.sender}-${newMessage.message}`;
+                if (!receivedMsgIds.current.has(msgId)) {
+                  receivedMsgIds.current.add(msgId);
+                  // 주기적으로 오래된 메시지 ID 정리
+                  cleanupReceivedMsgIds();
+                  return [...prevMessages, newMessage];
+                } else {
+                  console.log('중복 메시지 무시:', msgId);
+                  return prevMessages;
+                }
+              });
+            } else {
+              // 일반 메시지 처리
               const msgId = `${newMessage.timestamp}-${newMessage.sender}-${newMessage.message}`;
               if (!receivedMsgIds.current.has(msgId)) {
                 receivedMsgIds.current.add(msgId);
-                setMessages((prev) => [...prev, newMessage]);
-                
+                setMessages(prev => [...prev, newMessage]);
                 // 주기적으로 오래된 메시지 ID 정리
                 cleanupReceivedMsgIds();
               } else {
                 console.log('중복 메시지 무시:', msgId);
               }
-            } catch (error) {
-              console.error('Error parsing message:', error);
             }
-          });
-          
-          subscriptionRef.current = subscription;
-          console.log('새 채팅방 구독 완료:', roomId);
-          
-          // 이전 메시지 로드
-          fetchPreviousMessages(roomId);
-          
-          // 새 방 입장 메시지 전송
-          if (clientRef.current.connected) {
-            // enterFlag를 사용하여 중복 ENTER 메시지 방지
-            const enterFlag = sessionStorage.getItem(`enter-${roomId}`);
-            const currentTime = Date.now();
-            
-            // 첫 입장이거나 마지막 입장으로부터 10초 이상 지났을 때만 ENTER 메시지 전송
-            if (!enterFlag || (currentTime - parseInt(enterFlag)) > 10000) {
-              const enterMessage = {
-                type: MessageType.ENTER,
-                roomId,
-                sender: userInfo.username,
-                message: 'has joined the chat',
-                timestamp: new Date().toISOString()
-              };
-
-              clientRef.current.publish({
-                destination: `${APP_PREFIX}/chat/message`,
-                headers: {
-                  Authorization: `Bearer ${token}`
-                },
-                body: JSON.stringify(enterMessage)
-              });
-              
-              // 입장 시간 기록
-              sessionStorage.setItem(`enter-${roomId}`, currentTime.toString());
-            } else {
-              console.log('중복 ENTER 메시지 방지: 최근에 이미 입장 메시지를 보냈습니다.');
-            }
-            
-            // 메시지 목록 초기화
-            setMessages([]);
-            receivedMsgIds.current.clear();
+          } catch (error) {
+            console.error('Error parsing message:', error);
           }
-        } catch (e) {
-          console.error('새 채팅방 구독 중 오류:', e);
-          // 오류 발생 시 잠시 후 재시도
-          setTimeout(() => {
-            console.log('구독 재시도 중...');
-            if (clientRef.current && clientRef.current.connected) {
-              setupSubscription();
-            }
-          }, 1000);
-        }
-      };
-
-      // 기존 구독 해제 후 잠시 지연 시간을 둔 후 새 구독 설정
-      if (subscriptionRef.current) {
-        try {
-          subscriptionRef.current.unsubscribe();
-          subscriptionRef.current = null;
-          console.log('룸 변경으로 인한 기존 구독 해제');
+        });
+        
+        subscriptionRef.current = subscription;
+        console.log('새 채팅방 구독 완료:', roomId);
+        
+        // 이전 메시지 로드
+        fetchPreviousMessages(roomId);
+        
+        // 새 방 입장 메시지 전송
+        if (clientRef.current.connected) {
+          // enterFlag를 사용하여 중복 ENTER 메시지 방지
+          const enterFlag = sessionStorage.getItem(`enter-${roomId}`);
+          const currentTime = Date.now();
           
-          // 구독 해제 후 100ms 지연 후 새 구독 설정
-          setTimeout(setupSubscription, 100);
-        } catch (e) {
-          console.error('구독 해제 중 오류:', e);
-          // 오류가 발생해도 새 구독 설정 시도
-          setTimeout(setupSubscription, 100);
+          // 첫 입장이거나 마지막 입장으로부터 10초 이상 지났을 때만 ENTER 메시지 전송
+          if (!enterFlag || (currentTime - parseInt(enterFlag)) > 10000) {
+            const enterMessage = {
+              type: MessageType.ENTER,
+              roomId,
+              sender: userInfo.username,
+              message: 'has joined the chat',
+              timestamp: new Date().toISOString()
+            };
+
+            clientRef.current.publish({
+              destination: `${APP_PREFIX}/chat/message`,
+              headers: {
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify(enterMessage)
+            });
+            
+            // 입장 시간 기록
+            sessionStorage.setItem(`enter-${roomId}`, currentTime.toString());
+          } else {
+            console.log('중복 ENTER 메시지 방지: 최근에 이미 입장 메시지를 보냈습니다.');
+          }
         }
-      } else {
-        // 기존 구독이 없는 경우 즉시 설정
-        setupSubscription();
+      } catch (e) {
+        console.error('새 채팅방 구독 중 오류:', e);
+        // 오류 발생 시 잠시 후 재시도
+        setTimeout(() => {
+          console.log('구독 재시도 중...');
+          if (clientRef.current && clientRef.current.connected) {
+            setupSubscription();
+          }
+        }, 1000);
       }
-    }
+    };
+
+    // 구독 설정 호출 (약간의 지연시간을 줌)
+    setTimeout(setupSubscription, 300);
+    
   }, [roomId, isConnected, TOPIC_PREFIX, APP_PREFIX, userInfo, handleReconnect]);
 
   // 이전 채팅 메시지 로드 함수
@@ -741,7 +766,7 @@ const Chat = () => {
           receivedMsgIds.current.add(msgId);
         });
         
-        // 메시지 목록 설정
+        // 메시지 목록 설정 (이전에 있던 메시지 모두 삭제하고 새로 설정)
         setMessages(sortedMessages);
         console.log(`${sortedMessages.length}개의 이전 메시지를 로드했습니다.`);
         
@@ -749,21 +774,17 @@ const Chat = () => {
         setTimeout(scrollToBottom, 100);
       } else {
         console.log('이전 메시지가 없습니다.');
+        // 메시지가 없어도 빈 배열로 초기화
+        setMessages([]);
       }
     } catch (error) {
       console.error('이전 메시지 로드 중 오류:', error);
+      // 오류 발생 시에도 메시지 배열 초기화
+      setMessages([]);
     } finally {
       setIsLoadingMessages(false);
     }
   }, [API_URL]);
-
-  // 초기 구독 완료 후 이전 메시지 로드 추가
-  useEffect(() => {
-    // 채팅방 구독이 완료되고 연결 상태일 때만 이전 메시지 로드
-    if (isConnected && roomId && subscriptionRef.current) {
-      fetchPreviousMessages(roomId);
-    }
-  }, [isConnected, roomId, fetchPreviousMessages]);
 
   const sendMessage = () => {
     if (!message.trim() || !clientRef.current || !userInfo) return;
@@ -1019,37 +1040,60 @@ const Chat = () => {
   };
   
   // 채팅방 입장 함수
-  const enterChatRoom = async (roomId: string) => {
+  const enterChatRoom = async (newRoomId: string) => {
     try {
+      console.log(`enterChatRoom 함수 호출됨: ${newRoomId}`);
+      
+      if (newRoomId === roomId) {
+        console.log('이미 선택된 채팅방입니다.');
+        return;
+      }
+      
       const token = localStorage.getItem('accessToken');
       if (!token) {
         console.error('채팅방 입장 실패: 인증 토큰이 없습니다.');
         return;
       }
       
-      const response = await fetch(`${API_URL}/api/chat/rooms/${roomId}/join`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      
-      if (!response.ok) {
-        console.error(`채팅방 입장 실패: ${response.status} ${response.statusText}`);
-        alert('채팅방 입장에 실패했습니다.');
-        return;
-      }
-      
-      console.log('채팅방 입장 성공');
-      
-      // 채팅방 ID 변경 (useEffect에서 구독 처리)
-      setRoomId(roomId);
-      
-      // 메시지 초기화
+      // 먼저 메시지 상태와 중복 메시지 필터 초기화
       setMessages([]);
+      receivedMsgIds.current.clear();
+      
+      try {
+        // 기존 구독이 있으면 먼저 해제
+        if (subscriptionRef.current) {
+          try {
+            subscriptionRef.current.unsubscribe();
+            subscriptionRef.current = null;
+            console.log('채팅방 변경: 기존 구독 해제 완료');
+          } catch (e) {
+            console.warn('구독 해제 중 오류 (무시됨):', e);
+          }
+        }
+        
+        const response = await fetch(`${API_URL}/api/chat/rooms/${newRoomId}/join`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        if (!response.ok) {
+          console.error(`채팅방 입장 실패: ${response.status} ${response.statusText}`);
+          alert('채팅방 입장에 실패했습니다.');
+          return;
+        }
+        
+        console.log(`새 채팅방 ${newRoomId}에 입장 성공`);
+        
+        // 모든 작업이 성공적으로 완료된 후에 roomId 변경
+        setRoomId(newRoomId);
+      } catch (error) {
+        console.error('채팅방 입장 중 오류:', error);
+        alert('채팅방 입장 중 오류가 발생했습니다.');
+      }
     } catch (error) {
-      console.error('채팅방 입장 중 오류:', error);
-      alert('채팅방 입장 중 오류가 발생했습니다.');
+      console.error('enterChatRoom 처리 중 오류:', error);
     }
   };
   
