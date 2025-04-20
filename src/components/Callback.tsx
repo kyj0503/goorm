@@ -7,7 +7,19 @@ const Callback = () => {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    // 중복 처리 방지를 위한 플래그 확인
+    const isProcessed = sessionStorage.getItem('github_callback_processed');
+    
     const handleCallback = async () => {
+      // 이미 처리된 경우 중복 실행 방지
+      if (isProcessed) {
+        console.log('이미 처리된 GitHub 콜백입니다.');
+        return;
+      }
+      
+      // 처리 중임을 표시
+      sessionStorage.setItem('github_callback_processed', 'true');
+      
       // URL 파라미터 디버깅
       console.log('현재 URL:', window.location.href);
       const urlParams = new URLSearchParams(window.location.search);
@@ -81,11 +93,13 @@ const Callback = () => {
             const payload = JSON.parse(atob(data.accessToken.split('.')[1]));
             console.log('JWT 페이로드:', payload);
             console.log('토큰 만료 시간:', new Date(payload.exp * 1000).toLocaleString());
-            // 권한 정보 확인
+            // 권한 정보 확인 (role도 체크)
             if (payload.authorities) {
               console.log('사용자 권한:', payload.authorities);
+            } else if (payload.role) {
+              console.log('사용자 역할:', payload.role);
             } else {
-              console.warn('JWT 토큰에 권한 정보가 없습니다.');
+              console.info('JWT 토큰에 권한 정보가 없습니다.');
             }
           } catch (e) {
             console.error('토큰 형식이 잘못되었습니다:', e);
@@ -112,6 +126,14 @@ const Callback = () => {
     };
 
     handleCallback();
+    
+    // 컴포넌트 언마운트 시 또는 페이지 이동 시 처리 플래그 제거
+    return () => {
+      // 페이지 이동 시 플래그는 유지 (5초 후 자동 제거)
+      setTimeout(() => {
+        sessionStorage.removeItem('github_callback_processed');
+      }, 5000);
+    };
   }, [navigate]);
 
   if (error) {
