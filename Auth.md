@@ -8,26 +8,16 @@
 
 ### 2.1 인증 흐름
 
-```
-                                       ┌─────────────────┐
-                                       │     Client      │
-                                       └────────┬────────┘
-                                                │
-                                                ▼
-                ┌────────────────────────────────────────────────────┐
-                │                      API Gateway                    │
-                └───────────────────────┬────────────────────────────┘
-                                        │
-                                        ▼
-    ┌──────────────────────────────────────────────────────────────────────┐
-    │                          Spring Security Filter Chain                 │
-    │                                                                       │
-    │   ┌──────────────────┐      ┌───────────────────┐    ┌──────────┐    │
-    │   │   JwtAuthFilter  │ ─────►  Authentication   │─ ─ ► Resources │    │
-    │   └──────────────────┘      └───────────────────┘    └──────────┘    │
-    │                                                                       │
-    └──────────────────────────────────────────────────────────────────────┘
-```
+인증 과정은 다음과 같은 단계로 이루어집니다:
+
+1. 클라이언트(웹 브라우저, 모바일 앱 등)가 서버에 요청을 보냅니다.
+2. API 게이트웨이는 요청을 받아 Spring Security 필터 체인으로 전달합니다.
+3. JwtAuthenticationFilter는 요청 헤더에서 JWT 토큰을 추출합니다.
+4. 추출된 토큰은 검증되고, 유효한 경우 인증 객체가 생성됩니다.
+5. 인증된 요청은 보호된 리소스에 접근할 수 있게 됩니다.
+6. 인증되지 않은 요청은 401 Unauthorized 응답을 받습니다.
+
+JWT 토큰이 만료된 경우, 클라이언트는 리프레시 토큰을 사용하여 새로운 액세스 토큰을 요청할 수 있습니다.
 
 ### 2.2 컴포넌트 구조
 
@@ -176,8 +166,51 @@
 4. **비밀번호 정책**:
    - 최소 8자 이상
    - 최소 1개의 대문자, 1개의 소문자, 1개의 숫자, 1개의 특수문자 포함
-   
-## 6. 디버깅 및 문제 해결
+
+## 6. 프로젝트 시크릿 관리
+
+이 프로젝트에서는 다양한 민감한 정보(시크릿)가 요구되며, 이를 안전하게 관리해야 합니다.
+
+### 6.1 필요한 시크릿 목록
+
+| 시크릿 키 | 설명 | 권장 설정 |
+|----------|------|----------|
+| `app.jwt.secret` | JWT 토큰 서명용 비밀 키 | 최소 256비트 길이의 랜덤 문자열 |
+| `app.jwt.expiration` | JWT 액세스 토큰 만료 시간(ms) | 3600000 (1시간) |
+| `app.jwt.refresh-expiration` | JWT 리프레시 토큰 만료 시간(ms) | 604800000 (7일) |
+| `spring.datasource.username` | 데이터베이스 사용자명 | - |
+| `spring.datasource.password` | 데이터베이스 비밀번호 | - |
+| `spring.security.oauth2.client.registration.github.client-id` | GitHub OAuth 클라이언트 ID | GitHub에서 발급 |
+| `spring.security.oauth2.client.registration.github.client-secret` | GitHub OAuth 클라이언트 시크릿 | GitHub에서 발급 |
+| `spring.security.oauth2.client.registration.google.client-id` | Google OAuth 클라이언트 ID | Google Cloud에서 발급 |
+| `spring.security.oauth2.client.registration.google.client-secret` | Google OAuth 클라이언트 시크릿 | Google Cloud에서 발급 |
+| `spring.security.oauth2.client.registration.kakao.client-id` | Kakao OAuth 클라이언트 ID | Kakao Developers에서 발급 |
+| `spring.security.oauth2.client.registration.kakao.client-secret` | Kakao OAuth 클라이언트 시크릿 | Kakao Developers에서 발급 |
+
+### 6.2 시크릿 관리 방안
+
+1. **개발 환경**:
+   - 로컬 개발 시에는 `application-dev.properties` 또는 환경 변수 사용
+   - `.gitignore`에 시크릿이 포함된 파일 추가
+
+2. **운영 환경**:
+   - 환경 변수 또는 Kubernetes Secrets 사용
+   - AWS Parameter Store/Secrets Manager, HashiCorp Vault 등의 시크릿 관리 서비스 활용
+   - 주기적으로 시크릿 값 교체 (특히 OAuth 클라이언트 시크릿)
+
+3. **시크릿 참조 방법**:
+   ```properties
+   # application.properties 예시
+   app.jwt.secret=${JWT_SECRET:defaultSecretForDevOnly}
+   app.jwt.expiration=${JWT_EXPIRATION:3600000}
+   ```
+
+4. **보안 가이드라인**:
+   - 절대 시크릿을 소스 코드에 하드코딩하지 않음
+   - 로그에 시크릿 값이 출력되지 않도록 주의
+   - CI/CD 파이프라인에서 시크릿 관리에 주의 (암호화된 환경 변수 사용)
+
+## 7. 디버깅 및 문제 해결
 
 ### 공통 오류 코드
 
