@@ -72,7 +72,7 @@ public class AuthServiceImpl implements AuthService {
                 .tokenType("Bearer")
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
-                .expiresIn(86400000L)
+                .expiresIn(900000L)
                 .build();
     }
 
@@ -100,7 +100,7 @@ public class AuthServiceImpl implements AuthService {
                 .tokenType("Bearer")
                 .accessToken(newAccessToken)
                 .refreshToken(newRefreshToken)
-                .expiresIn(86400000L)
+                .expiresIn(900000L)
                 .build();
     }
 

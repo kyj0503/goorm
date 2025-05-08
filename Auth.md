@@ -70,7 +70,7 @@ JWT 토큰이 만료된 경우, 클라이언트는 리프레시 토큰을 사용
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
     "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
     "tokenType": "Bearer",
-    "expiresIn": 86400000
+    "expiresIn": 900000
   }
   ```
 
@@ -85,7 +85,7 @@ JWT 토큰이 만료된 경우, 클라이언트는 리프레시 토큰을 사용
     "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
     "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6...",
     "tokenType": "Bearer",
-    "expiresIn": 86400000
+    "expiresIn": 900000
   }
   ```
 
@@ -186,7 +186,7 @@ JWT 토큰이 만료된 경우, 클라이언트는 리프레시 토큰을 사용
 ### 액세스 토큰
 
 - **유형**: Bearer 토큰
-- **만료 시간**: 1일 (86400000 밀리초)
+- **만료 시간**: 15분 (900000 밀리초)
 - **페이로드**:
   ```json
   {
@@ -234,7 +234,7 @@ JWT 토큰이 만료된 경우, 클라이언트는 리프레시 토큰을 사용
 | 시크릿 키 | 설명 | 권장 설정 |
 |----------|------|----------|
 | `app.jwt.secret` | JWT 토큰 서명용 비밀 키 | 최소 256비트 길이의 랜덤 문자열 |
-| `app.jwt.expiration` | JWT 액세스 토큰 만료 시간(ms) | 86400000 (1일) |
+| `app.jwt.expiration` | JWT 액세스 토큰 만료 시간(ms) | 900000 (15분) |
 | `app.jwt.refresh-expiration` | JWT 리프레시 토큰 만료 시간(ms) | 604800000 (7일) |
 | `spring.datasource.username` | 데이터베이스 사용자명 | - |
 | `spring.datasource.password` | 데이터베이스 비밀번호 | - |
@@ -263,7 +263,7 @@ JWT 토큰이 만료된 경우, 클라이언트는 리프레시 토큰을 사용
    ```properties
    # application.properties 예시
    app.jwt.secret=${JWT_SECRET:defaultSecretForDevOnly}
-   app.jwt.expiration=${JWT_EXPIRATION:86400000}
+   app.jwt.expiration=${JWT_EXPIRATION:900000}
    ```
 
 ## 7. 인증 시스템 사용 방법
