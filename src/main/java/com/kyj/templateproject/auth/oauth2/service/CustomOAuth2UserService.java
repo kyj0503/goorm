@@ -1,10 +1,10 @@
 package com.kyj.templateproject.auth.oauth2.service;
 
+import com.kyj.templateproject.auth.entity.User;
 import com.kyj.templateproject.auth.oauth2.user.OAuth2UserInfo;
 import com.kyj.templateproject.auth.oauth2.user.OAuth2UserInfoFactory;
+import com.kyj.templateproject.auth.repository.UserRepository;
 import com.kyj.templateproject.auth.security.CustomUserDetails;
-import com.kyj.templateproject.user.entity.User;
-import com.kyj.templateproject.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.InternalAuthenticationServiceException;
 import org.springframework.security.core.AuthenticationException;

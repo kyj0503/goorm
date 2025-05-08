@@ -1,6 +1,6 @@
 package com.kyj.templateproject.config;
 
-import com.kyj.templateproject.common.jwt.JwtAuthenticationFilter;
+import com.kyj.templateproject.auth.security.JwtAuthenticationFilter;
 import com.kyj.templateproject.auth.oauth2.handler.OAuth2AuthenticationSuccessHandler;
 import com.kyj.templateproject.auth.oauth2.service.CustomOAuth2UserService;
 import lombok.RequiredArgsConstructor;
@@ -35,9 +35,6 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**", "/oauth2/**").permitAll()
-                        .requestMatchers("/api/users/register", "/api/users/login").permitAll()
-                        .requestMatchers("/api/users/verify", "/api/users/forgot").permitAll()
-                        .requestMatchers("/api/users/token/refresh").permitAll()
                         .requestMatchers("/h2-console/**").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -49,7 +46,6 @@ public class SecurityConfig {
                 )
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
-        // H2 콘솔을 위한 설정 (개발 환경에서만 사용)
         http.headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable()));
 
         return http.build();

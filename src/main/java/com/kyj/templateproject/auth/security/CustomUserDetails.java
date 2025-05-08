@@ -1,6 +1,6 @@
 package com.kyj.templateproject.auth.security;
 
-import com.kyj.templateproject.user.entity.User;
+import com.kyj.templateproject.auth.entity.User;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.springframework.security.core.GrantedAuthority;

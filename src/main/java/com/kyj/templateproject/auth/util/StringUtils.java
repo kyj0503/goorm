@@ -1,4 +1,4 @@
-package com.kyj.templateproject.common.util;
+package com.kyj.templateproject.auth.util;
 
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -133,4 +133,4 @@ public class StringUtils {
         }
         return str.matches("-?\\d+(\\.\\d+)?");
     }
-} 
+}

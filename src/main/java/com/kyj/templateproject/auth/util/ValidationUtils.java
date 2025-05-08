@@ -1,4 +1,4 @@
-package com.kyj.templateproject.common.util;
+package com.kyj.templateproject.auth.util;
 
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validation;

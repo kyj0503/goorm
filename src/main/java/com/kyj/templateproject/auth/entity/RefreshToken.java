@@ -1,6 +1,5 @@
 package com.kyj.templateproject.auth.entity;
 
-import com.kyj.templateproject.user.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -23,9 +22,8 @@ public class RefreshToken {
     @Column(nullable = false, unique = true)
     private String token;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
 
     @Column(nullable = false)
     private LocalDateTime expiryDate;
@@ -36,5 +34,10 @@ public class RefreshToken {
 
     public boolean isExpired() {
         return LocalDateTime.now().isAfter(expiryDate);
+    }
+    
+    public void updateToken(String token) {
+        this.token = token;
+        this.expiryDate = LocalDateTime.now().plusDays(7); // 7일 유효기간
     }
 } 

@@ -1,4 +1,4 @@
-package com.kyj.templateproject.common.exception;
+package com.kyj.templateproject.auth.exception;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

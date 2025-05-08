@@ -1,6 +1,5 @@
-package com.kyj.templateproject.common.jwt;
+package com.kyj.templateproject.auth.security;
 
-import com.kyj.templateproject.auth.security.CustomUserDetails;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;

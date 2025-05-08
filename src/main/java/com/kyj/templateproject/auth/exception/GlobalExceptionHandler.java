@@ -1,4 +1,4 @@
-package com.kyj.templateproject.common.exception;
+package com.kyj.templateproject.auth.exception;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;

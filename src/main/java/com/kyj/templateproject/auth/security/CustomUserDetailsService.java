@@ -1,8 +1,7 @@
 package com.kyj.templateproject.auth.security;
 
-import com.kyj.templateproject.auth.security.CustomUserDetails;
-import com.kyj.templateproject.user.entity.User;
-import com.kyj.templateproject.user.repository.UserRepository;
+import com.kyj.templateproject.auth.entity.User;
+import com.kyj.templateproject.auth.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
