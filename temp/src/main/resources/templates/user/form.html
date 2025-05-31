@@ -1,0 +1,50 @@
+<!-- src/main/resources/templates/user/form.html -->
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>User Form</title>
+    <meta charset="utf-8"/>
+</head>
+<body>
+<h1>User Form</h1>
+
+<!--
+    1) 신규 생성 시  => POST /users
+    2) 수정 시      => POST /users/{id}
+
+   userForm.id 값이 있으면 수정, 없으면 새로 생성한다는 식으로
+   폼 액션(action)을 동적으로 변경할 수 있음.
+-->
+<form th:action="${userForm.id != null} ? @{'/users/' + ${userForm.id}} : @{'/users'}"
+      method="post">
+
+    <p>
+        <label>ID:</label>
+        <!-- read-only -->
+        <input type="text" th:value="${userForm.id}" readonly="readonly"
+               th:if="${userForm.id != null}"/>
+        <!--
+            userForm.id가 null이 아닐 때만 표시(수정 모드).
+            신규 등록인 경우엔 ID 필드를 아예 안 보여줄 수도 있음.
+        -->
+    </p>
+
+    <p>
+        <label>Name:</label>
+        <input type="text" th:field="${userForm.name}" required="required"/>
+    </p>
+
+    <p>
+        <label>Email:</label>
+        <input type="email" th:field="${userForm.email}" required="required"/>
+    </p>
+
+    <p><button type="submit">Submit</button></p>
+
+</form>
+
+<!-- 목록 페이지로 돌아가는 링크 -->
+<p><a href="/users">Back to List</a></p>
+
+</body>
+</html>
